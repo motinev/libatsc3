@@ -185,6 +185,8 @@ private:
     int PcapConsumerThreadRun();
     int PcapLocalCleanup();
 
+    int CreateMulticastSocket(); // VBox CreateMulticastSocket
+
     AAsset*                         pcap_replay_asset_ref_ptr = NULL;
     char*                           pcap_replay_filename = NULL;
     bool                            pcapThreadShouldRun;
@@ -302,6 +304,11 @@ private:
     void RxStatusThread();
     bool rxStatusThreadShouldRun;
 
+public:
+    // VBox stuff
+    char* mCurrentIntServiceIP = "224.0.23.60"; // First Multicast IP to listen: LMT IP
+    int mCurrentIntServicePort = 4937; // First Multicast Port to listen: LMT Port
+    bool mIsVBoxDevice = false; // Flag to indicate VBox device selected
 
 };
 

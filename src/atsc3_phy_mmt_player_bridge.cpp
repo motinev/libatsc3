@@ -186,6 +186,10 @@ atsc3_lls_slt_service_t* atsc3_phy_mmt_player_bridge_set_single_monitor_a331_ser
                atsc3_slt_broadcast_svc_signalling_mmt->sls_destination_ip_address,
                atsc3_slt_broadcast_svc_signalling_mmt->sls_destination_udp_port);
 
+        // VBox - copy the IP:Port of the selected service for Multicast listening
+        Atsc3NdkClient_ptr->mCurrentIntServiceIP = atsc3_slt_broadcast_svc_signalling_mmt->sls_destination_ip_address;
+        Atsc3NdkClient_ptr->mCurrentIntServicePort = parsePortIntoIntval(atsc3_slt_broadcast_svc_signalling_mmt->sls_destination_udp_port);
+
         //clear any active SLS monitors
         lls_slt_monitor_clear_lls_sls_mmt_monitor(lls_slt_monitor);
 
@@ -227,6 +231,10 @@ atsc3_lls_slt_service_t* atsc3_phy_mmt_player_bridge_set_single_monitor_a331_ser
                atsc3_slt_broadcast_svc_signalling_route->sls_source_ip_address,
                atsc3_slt_broadcast_svc_signalling_route->sls_destination_ip_address,
                atsc3_slt_broadcast_svc_signalling_route->sls_destination_udp_port);
+
+        // VBox - copy the IP:Port of the selected service for Multicast listening
+        Atsc3NdkClient_ptr->mCurrentIntServiceIP = atsc3_slt_broadcast_svc_signalling_route->sls_destination_ip_address;
+        Atsc3NdkClient_ptr->mCurrentIntServicePort = parsePortIntoIntval(atsc3_slt_broadcast_svc_signalling_route->sls_destination_udp_port);
 
         lls_slt_monitor_clear_lls_sls_alc_monitor(lls_slt_monitor);
 
@@ -450,7 +458,17 @@ void atsc3_phy_mmt_player_bridge_process_packet_phy(block_t* packet) {
     //lowasys hands off the ip packet header, not phy eth frame
 
     //udp_packet_t* udp_packet = udp_packet_process_from_ptr_raw_ethernet_packet(block_Get(packet), packet->p_size);
-    udp_packet_t* udp_packet = udp_packet_process_from_ptr(block_Get(packet), packet->p_size);
+
+    // VBox
+    udp_packet_t* udp_packet;
+
+    if (Atsc3NdkClient_ptr->mIsVBoxDevice) {
+        udp_packet_t **udp_packet_ptr = (udp_packet_t **) block_Get(packet);;
+        udp_packet = *udp_packet_ptr;
+    }
+    else
+        // Orig code
+        udp_packet = udp_packet_process_from_ptr(block_Get(packet), packet->p_size);
 
     if(!udp_packet) {
         __ERROR("after udp_packet_process_from_ptr: unable to extract packet size: %d, i_pos: %d, 0x%02x 0x%02x",

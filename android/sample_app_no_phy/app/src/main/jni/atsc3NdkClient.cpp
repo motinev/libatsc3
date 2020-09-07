@@ -4,6 +4,7 @@
 #include <atsc3_phy_mmt_player_bridge.h>
 #include <atsc3_pcap_type.h>
 #include <atsc3_monitor_events_alc.h>
+#include <arpa/inet.h>
 #include "atsc3NdkClient.h"
 #include "atsc3NdkClientNoPhyImpl.h"
 
@@ -108,6 +109,25 @@ int atsc3NdkClient::atsc3_pcap_replay_open_file_from_assetManager(const char *fi
         atsc3_pcap_thread_stop();
     }
 
+    // VBox - create fake "atsc3_pcap_replay_context"
+    if (strstr(filename,"VBox")) {
+        mIsVBoxDevice = true;
+        // Fill fake atsc3_pcap_replay_context
+        atsc3_pcap_replay_context = (atsc3_pcap_replay_context_t*)calloc(1, sizeof(atsc3_pcap_replay_context_t));
+        atsc3_pcap_replay_context->pcap_file_name = (char*)calloc(strlen("VBox") + 1, sizeof(char));
+        strncpy(atsc3_pcap_replay_context->pcap_file_name, "VBox", strlen("VBox"));
+
+        //embedded android assets start in the an internal offset from AAsset_openFileDescriptor
+        atsc3_pcap_replay_context->pcap_fd_start = 0; // fake
+        atsc3_pcap_replay_context->pcap_file_len = 1000; // fake
+        atsc3_pcap_replay_context->pcap_file_pos = 0;
+        atsc3_pcap_replay_context->pcap_fp = 0; // fake "0"
+
+        return 0;
+    }
+    else
+        mIsVBoxDevice = false;
+
     LogMsgF("atsc3NdkClient::atsc3_pcap_open_for_replay_from_assetManager: filename: %s, aasetManager: %p", filename, mgr);
     pcap_replay_filename = (char*)calloc(strlen(filename)+1, sizeof(char));
     strncpy(pcap_replay_filename, filename, strlen(filename));
@@ -142,6 +162,52 @@ int atsc3NdkClient::atsc3_pcap_replay_open_file(const char *filename) {
     return 0;
 }
 
+/* VBox
+ * CreateMulticastSocket
+ * Takes the global variables of IP and Port and create new socket and returns its descriptor
+*/
+int atsc3NdkClient::CreateMulticastSocket() {
+
+#define MAXLEN 2048
+
+    int recv_s;     /* Sockets for receiving. */
+    struct sockaddr_in mcast_group;
+    struct ip_mreq mreq;
+
+    printf ("Enter CreateMulticastSocket for IP = %s, Port = %d", mCurrentIntServiceIP, mCurrentIntServicePort);
+
+    memset(&mcast_group, 0, sizeof(mcast_group));
+    mcast_group.sin_family = AF_INET;
+    mcast_group.sin_port = htons(mCurrentIntServicePort);
+    mcast_group.sin_addr.s_addr = inet_addr(mCurrentIntServiceIP);
+
+    if ((recv_s = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("recv socket");
+        return -1;
+    }
+
+    if (::bind(recv_s, (struct sockaddr *) &mcast_group, sizeof(mcast_group)) < 0) {
+        perror("bind");
+        return -1;
+    }
+    /* Preparations for using Multicast */
+    mreq.imr_multiaddr = mcast_group.sin_addr;
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY); // inet_addr("192.168.1.25");//
+
+    /* Tell the kernel we want to join that multicast group. */
+    if (setsockopt(recv_s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
+        perror("add_membership setsockopt");
+        return -1;
+    }
+
+    // Set timeout for recvfrom
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(recv_s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
+    return recv_s;
+}
 
 /**
  * TODO:  jjustman-2019-10-10: implement pcap replay in new superclass
@@ -159,6 +225,8 @@ int atsc3NdkClient::PcapProducerThreadParserRun() {
 
     LogMsgF("atsc3NdkClient::PcapProducerThreadParserRun with this: %p", this);
 
+    printf("PcapProducerThreadParserRun TID = %d", gettid()); // VBox
+
     if(!atsc3_pcap_replay_context) {
         LogMsgF("atsc3NdkClient::PcapProducerThreadParserRun - ERROR - no atsc3_pcap_replay_context!");
         pcapThreadShouldRun = false;
@@ -166,6 +234,92 @@ int atsc3NdkClient::PcapProducerThreadParserRun() {
     }
 
     atsc3_pcap_replay_context_t* atsc3_pcap_replay_local_context = atsc3_pcap_replay_context;
+
+    // VBox
+    if (mIsVBoxDevice) {
+
+        int bytesRecieved;
+        int packets_count = 0;
+        socklen_t len;
+        struct sockaddr_in from;
+        char message[MAXLEN];
+        struct sockaddr_in mcast_group;
+        int current_port = mCurrentIntServicePort;
+        udp_packet_t *udp_packet = NULL;
+
+        mcast_group.sin_port = htons(mCurrentIntServicePort);
+        mcast_group.sin_addr.s_addr = inet_addr(mCurrentIntServiceIP);
+
+        int recv_s = CreateMulticastSocket();
+        if (recv_s < 0) {
+            printf ("error to create socket");
+        }
+
+        while (pcapThreadShouldRun) {
+
+            // VBox - to disable this service switch use:            if (current_port == 200) {
+            if (current_port  != mCurrentIntServicePort) {
+                printf ("port was changes to: %d (IP %s)", mCurrentIntServicePort, mCurrentIntServiceIP);
+                current_port = mCurrentIntServicePort;
+                mcast_group.sin_port = htons(mCurrentIntServicePort);
+                mcast_group.sin_addr.s_addr = inet_addr(mCurrentIntServiceIP);
+                // Close current socket
+                close(recv_s);
+                //Open the new socket
+                recv_s = CreateMulticastSocket();
+                if (recv_s < 0) {
+                    printf ("error to create socket");
+                }
+            }
+
+            len = sizeof(struct sockaddr_in);
+            if ((bytesRecieved = recvfrom(recv_s, message, MAXLEN, 0,
+                                          (struct sockaddr *) &from, &len)) < 0) {
+                if (errno != EAGAIN ) { // Only if not Timeout
+                    printf("Error in recvfrom - %d, errno = %d\n", bytesRecieved, errno);
+                    perror("recv");
+                }
+                continue;
+            }
+            // VBox - for Debug print: printf("Received message for %s:%d, size=%d", inet_ntoa(mcast_group.sin_addr), ntohs(mcast_group.sin_port), bytesRecieved);
+
+            // VBox - patch to run only once the LLS/LMT detection (uncomment for activate)
+            // if (ntohs(mcast_group.sin_port) == 4937 && packets_count >= 1) {
+            //      printf ("skip LMT packet - patch");
+            //      continue;
+            // }
+            { // crate udp_packet from received datagram
+
+               udp_packet = (udp_packet_t *) calloc(1, sizeof(udp_packet_t));
+                if (udp_packet == NULL) {
+                    printf ("PcapProducerThreadParserRun - ERROR: calloc returns NULL");
+                    continue;
+                }
+                // VBox - printf("PcapProducerThreadParserRun: calloc udp_packet - %x", udp_packet);
+                udp_packet->udp_flow.src_ip_addr = htonl(from.sin_addr.s_addr);
+                udp_packet->udp_flow.dst_ip_addr = htonl(mcast_group.sin_addr.s_addr);
+                udp_packet->udp_flow.src_port = htons(from.sin_port);
+                udp_packet->udp_flow.dst_port = htons(mcast_group.sin_port);
+                udp_packet->data = block_Alloc(bytesRecieved);
+
+                block_Write(udp_packet->data, (uint8_t *) &message, bytesRecieved);
+                block_Rewind(udp_packet->data);
+
+                block_t *fake_pcap_block = block_Alloc(sizeof(udp_packet_t*));
+                block_Write(fake_pcap_block, (uint8_t *) &udp_packet, sizeof(udp_packet_t*));
+                block_Rewind(fake_pcap_block);
+
+                lock_guard<mutex> pcap_replay_buffer_queue_guard(pcap_replay_buffer_queue_mutex);
+                pcap_replay_buffer_queue.push(fake_pcap_block);
+
+                if ((packets_count++ % 2) == 0) { // VBox TODO - to optimize
+                    // VBox For Debug prints: printf ("call notify_one. list size = %d, count = %d", pcap_replay_buffer_queue.size(), packets_count);
+                    pcap_replay_condition.notify_one();
+                }
+            }
+        }
+    }
+    else
     while (pcapThreadShouldRun) {
         queue<block_t *> to_dispatch_queue; //perform a shallow copy so we can exit critical section asap
 
@@ -229,6 +383,7 @@ int atsc3NdkClient::PcapProducerThreadParserRun() {
 
 int atsc3NdkClient::PcapConsumerThreadRun() {
 
+    printf("PcapConsumerThreadRun TID = %d", gettid()); // VBox
 
     while (pcapThreadShouldRun) {
         queue<block_t *> to_dispatch_queue; //perform a shallow copy so we can exit critical section asap

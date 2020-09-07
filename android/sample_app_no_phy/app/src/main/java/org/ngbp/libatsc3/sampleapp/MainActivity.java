@@ -1,9 +1,12 @@
 package org.ngbp.libatsc3.sampleapp;
 
 import android.Manifest;
+import android.app.AlertDialog; // VBox
+import android.app.DownloadManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface; // VBox
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
@@ -27,6 +30,7 @@ import android.os.Message;
 import android.telephony.PhoneNumberFormattingTextWatcher;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
+import android.util.Patterns; // VBox
 import android.util.Size;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -61,6 +65,7 @@ import org.ngbp.libatsc3.android.DebuggingFlags;
 import org.ngbp.libatsc3.android.PackageExtractEnvelopeMetadataAndPayload;
 import org.ngbp.libatsc3.android.ServiceHandler;
 import org.ngbp.libatsc3.android.ThingsUI;
+import org.ngbp.libatsc3.android.VBoxConnect; // VBox
 import org.ngbp.libatsc3.android.pcapreplay.PcapFileSelectorActivity;
 import org.ngbp.libatsc3.android.phy.RfScanUtility;
 import org.ngbp.libatsc3.media.ATSC3PlayerFlags;
@@ -154,7 +159,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private static final String PCAP_URI_PREFIX = "pcaps/";
     private String inputSelectedPcapReplayFromAssetManager = null;
-    private String pcapAssetFromAssetManager[] = { "pcaps/2019-10-29-239.0.0.18.PLP.1.decoded.pcap", "pcaps/2019-12-17-lab-digi-alp.pcap" };
+
+    // VBox - Added VBox device to the list
+    private String pcapAssetFromAssetManager[] = { "VBox", "pcaps/2019-10-29-239.0.0.18.PLP.1.decoded.pcap", "pcaps/2019-12-17-lab-digi-alp.pcap" };
 
     public static final String SELECT_PCAP_MESSAGE = "Select PCAP from Device...";
     private String inputSelectedPcapReplayFromFilesystem  = null;
@@ -260,6 +267,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     Boolean hasSetSurfaceView = false;
     Boolean isSurfaceViewFullScreen = false;
+
+    // VBox stuff
+    private String mVBoxIP = "";  // VBox - the VBox device IP
+    private Boolean mVBoxDevice = false;  // VBox - Set to true when "VBox" device selected
+    private String mCurrentMulticastIP = "224.0.23.60";  // VBox - At initial detection state it is the LMT multicast IP
+    private int mCurrentMulticastPort = 4937;  // VBox - At initial detection state it is the LMT multicast Port
 
 
     Integer originalVisibility = null;
@@ -648,6 +661,25 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
               public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                   Service service = (Service) parent.getItemAtPosition(position);
 
+                  // VBox - send request to stream the multicast from the VBox device
+                  {
+                      Log.d(TAG, "List size = " + service.broadcastSvcSignalingCollection.size() + " IP = "
+                              + service.broadcastSvcSignalingCollection.get(0).slsDestinationIpAddress + " Port = "
+                              + service.broadcastSvcSignalingCollection.get(0).slsDestinationUdpPort);
+
+                      //check if service was changed and then reopen the multicast stream request from the VBox devcie
+                      if (mCurrentMulticastIP != service.broadcastSvcSignalingCollection.get(0).slsDestinationIpAddress ||
+                            mCurrentMulticastPort != Integer.parseInt(service.broadcastSvcSignalingCollection.get(0).slsDestinationUdpPort)) {
+                          mCurrentMulticastIP = service.broadcastSvcSignalingCollection.get(0).slsDestinationIpAddress;
+                          mCurrentMulticastPort = Integer.parseInt(service.broadcastSvcSignalingCollection.get(0).slsDestinationUdpPort);
+
+                          Log.d(TAG, "Saved IP = " + service.broadcastSvcSignalingCollection.get(0).slsDestinationIpAddress
+                                  + " Port = " + service.broadcastSvcSignalingCollection.get(0).slsDestinationUdpPort);
+
+                          VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext());
+                          VBoxConnect.OpenVBoxMulticastStream(mVBoxIP, mCurrentMulticastIP, mCurrentMulticastPort, getApplicationContext());
+                      }
+                  }
                   selectedServiceId = service.serviceId;
                   editServiceIDText.setText(""+service.serviceId);
 
@@ -1430,6 +1462,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public void onBackPressed() {
         Log.d(TAG, "onBackPressed called");
+        if (mVBoxDevice) // Close the multicast streaming from the vbox device
+            VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext());
         mAt3DrvIntf.ApiClose();
         unregisterReceiver(mUsbReceiver);
         mAt3DrvIntf.ApiUninit();
@@ -1851,16 +1885,67 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
             case R.id.butTune:
                 //showMsg("button Tune\n");
-                if (mCurAt3Device == null) {
-                    showMsg("no atlas device connected yet\n");
-                    break;
-                }
                 EditText editFreq = (EditText)findViewById(R.id.editFreqMhz);
 
                 final int freqMHz = Integer.parseInt(editFreq.getText().toString());
                 EditText editPlp = (EditText)findViewById(R.id.editPlp);
                 final int plp = Integer.parseInt(editPlp.getText().toString());
                 Log.d(TAG, "tune with freq " + freqMHz + ", plp " + plp);
+
+                if (mVBoxDevice) {
+                    // VBox: Get VBox Device IP - TODO use UPnp to find it automatically
+                    if (mVBoxIP.isEmpty()) { // First time to fill the VBox device IP - mVBoxIP is empty
+                        final String[] VBoxIP = new String[1];
+                        AlertDialog.Builder alert = new AlertDialog.Builder(this);
+                        alert.setTitle("Fill VBox device IP");
+                        alert.setMessage("(For example 192.168.0.23)");
+
+                        // Set an EditText view to get user input
+                        final EditText input = new EditText(this);
+                        input.setText("192.168.0.26");
+                        alert.setView(input);
+
+                        alert.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dialog, int whichButton) {
+                                VBoxIP[0] = input.getText().toString();
+
+                                if ( !Patterns.IP_ADDRESS.matcher(VBoxIP[0]).matches()) {
+                                    Toast.makeText(getApplicationContext(), String.format("IP format is incorrect - Please try again"), Toast.LENGTH_SHORT).show();
+                                    return;
+                                }
+                                // Save the IP field to avoid additional dialog
+                                mVBoxIP = VBoxIP[0];
+                                Log.d(TAG, "onClick for OK - input text:" + VBoxIP[0]);
+
+                                VBoxConnect.sendVBoxTuneRequest(VBoxIP[0], freqMHz, plp, getApplicationContext());
+
+                                VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext());
+                                VBoxConnect.OpenVBoxMulticastStream(mVBoxIP, mCurrentMulticastIP, mCurrentMulticastPort, getApplicationContext());
+                            }
+                        });
+
+                        alert.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dialog, int whichButton) {
+                                // Canceled.
+                            }
+                        });
+
+                        alert.show();
+                    } else { // mVBoxIP is not empty (i.e. already was set)
+
+                        VBoxConnect.sendVBoxTuneRequest(mVBoxIP, freqMHz, plp, getApplicationContext());
+
+                        VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext());
+                        VBoxConnect.OpenVBoxMulticastStream(mVBoxIP, mCurrentMulticastIP, mCurrentMulticastPort, getApplicationContext());
+                    }
+                    break;
+                }
+
+                if (mCurAt3Device == null) {
+                    showMsg("no atlas device connected yet\n");
+                    break;
+                }
+
                 //ThingsUI.WriteToAlphaDisplayNoEx(String.format("T%d", freqMHz));
                 new Thread(new Runnable() {
                     @Override
@@ -2085,7 +2170,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         } else if(s.equals(inputSelectedPcapReplayFromFilesystem)) {
             //ignore this onSelect event, as we handle it in the onActivityResult
             return;
-        } else if(s.startsWith(PCAP_URI_PREFIX)) {
+            // VBox        } else if(s.startsWith(PCAP_URI_PREFIX)) {
+            } else if(s.startsWith(PCAP_URI_PREFIX) || s.startsWith("VBox")) { // VBox
+
+            if (s.startsWith("VBox")) // Use this flag to indicate that we are working with VBox Device
+                mVBoxDevice = true;
+            else
+                mVBoxDevice = false;
+
             //support pre-baked in pcap assets as needed
             inputSelectedPcapReplayFromFilesystem = null;
             inputSelectedPcapReplayFromAssetManager = s;
