@@ -11,6 +11,8 @@
 #include "atsc3_utils.h"
 #include "atsc3_logging_externs.h"
 
+#include "atsc3_ip_udp_rtp_types.h"
+
 #if defined (__cplusplus)
 extern "C" {
 #endif
@@ -32,6 +34,10 @@ extern "C" {
  **/
 
 typedef struct atsc3_baseband_packet {
+	uint8_t		plp_num;
+
+	atsc3_rtp_header_timestamp_t	bootstrap_timing_data_timestamp_short_reference;
+
     uint8_t     base_field_mode;    //1 bit
     uint16_t    base_field_pointer; //either 7 bits or 13 bits
     uint8_t     option_field_mode;  //                  2 bits
@@ -42,7 +48,6 @@ typedef struct atsc3_baseband_packet {
     block_t*    alp_payload_pre_pointer; //TODO: jjustman-2019-08-09 - is this the right place for the pre/post ALP pointers?
     block_t*    alp_payload_post_pointer;
 } atsc3_baseband_packet_t;
-
 
 void atsc3_baseband_packet_free_v(atsc3_baseband_packet_t* atsc3_baseband_packet);
 void atsc3_baseband_packet_free(atsc3_baseband_packet_t** atsc3_baseband_packet);

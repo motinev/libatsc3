@@ -12,3 +12,6 @@
 /captures
 .externalNativeBuild
 .cxx
+/.idea/
+/android/atsc3_phy_lowasis/build/
+/android/atsc3_phy_saankhya/build/
