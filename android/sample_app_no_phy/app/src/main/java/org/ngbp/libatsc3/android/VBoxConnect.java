@@ -57,10 +57,13 @@ public class VBoxConnect extends Thread {
                     // Set connection timeout and read timeout value.
                     httpConn.setConnectTimeout(4000);
                     httpConn.setReadTimeout(4000);
+                    httpConn.setDoInput(true);
+
+//                    Log.d(TAG, "Before was sent. [" + httpConn.getURL().getQuery().toString().split("OPTION=1&",2)[1] + "]");
+//                    httpConn.connect();
 
                     int resCode = httpConn.getResponseCode();
-                    if (resCode == 200)
-                        toast(mContext, "Request was sent successfully to the VBox device");
+                    Log.d(TAG, "Request was sent. ResponseCode: " + resCode + " [" + httpConn.getURL().getQuery().toString().split("OPTION=1&",2)[1] + "]");
 
                     // Get input stream from web url connection.
                     InputStream inputStream = httpConn.getInputStream();
@@ -78,7 +81,7 @@ public class VBoxConnect extends Thread {
                         // Continue to read text line.
                         line = bufReader.readLine();
                     }
-                    Log.d(TAG, "Replay to: " + httpConn.getURL().getQuery().toString());
+                    Log.d(TAG, "Replay To: " + httpConn.getURL().getQuery().toString().split("OPTION=1&",2)[1]);
                     Log.d(TAG, "Replay Body: " +readTextBuf.toString());
 
                 } catch (MalformedURLException ex) {

@@ -37,7 +37,7 @@
         <TextView
             android:id="@+id/textMsg"
             android:layout_width="match_parent"
-            android:layout_height="100dp"
+            android:layout_height="50dp"
             android:focusable="false"
             android:text="ATSC 3.0 - NGBP - Mobile Android"
             android:textSize="6sp" />
@@ -55,7 +55,7 @@
         <LinearLayout
             android:id="@+id/SlsAndAlcObjectStatusMessages"
             android:layout_width="match_parent"
-            android:layout_height="100dp"
+            android:layout_height="50dp"
             android:orientation="horizontal"
             android:weightSum="1">
 

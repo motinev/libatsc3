@@ -677,7 +677,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                                   + " Port = " + service.broadcastSvcSignalingCollection.get(0).slsDestinationUdpPort);
 
                           VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext());
+                          sleep(500);
                           VBoxConnect.OpenVBoxMulticastStream(mVBoxIP, mCurrentMulticastIP, mCurrentMulticastPort, getApplicationContext());
+                          sleep(100);
                       }
                   }
                   selectedServiceId = service.serviceId;
@@ -1462,8 +1464,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public void onBackPressed() {
         Log.d(TAG, "onBackPressed called");
-        if (mVBoxDevice) // Close the multicast streaming from the vbox device
+        if (mVBoxDevice) { // Close the multicast streaming from the vbox device
             VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext());
+            sleep(500);
+        }
+
         mAt3DrvIntf.ApiClose();
         unregisterReceiver(mUsbReceiver);
         mAt3DrvIntf.ApiUninit();
@@ -1918,9 +1923,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                                 Log.d(TAG, "onClick for OK - input text:" + VBoxIP[0]);
 
                                 VBoxConnect.sendVBoxTuneRequest(VBoxIP[0], freqMHz, plp, getApplicationContext());
-
-                                VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext());
+                                sleep(1000);
+                                VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext()); // Anyway to be sure that no previous streaming is running
+                                sleep(500);
                                 VBoxConnect.OpenVBoxMulticastStream(mVBoxIP, mCurrentMulticastIP, mCurrentMulticastPort, getApplicationContext());
+                                sleep(100);
                             }
                         });
 
@@ -1934,9 +1941,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     } else { // mVBoxIP is not empty (i.e. already was set)
 
                         VBoxConnect.sendVBoxTuneRequest(mVBoxIP, freqMHz, plp, getApplicationContext());
-
+                        sleep(1000);
                         VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext());
+                        sleep(500);
                         VBoxConnect.OpenVBoxMulticastStream(mVBoxIP, mCurrentMulticastIP, mCurrentMulticastPort, getApplicationContext());
+                        sleep(100);
                     }
                     break;
                 }
@@ -2029,6 +2038,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 showMsg("button Stop\n");
                 //TODO: jjustman-2019-10-18
 
+                if (mVBoxDevice) {
+                        VBoxConnect.CloseVBoxMulticastStream(mVBoxIP, getApplicationContext());
+                        sleep(500);
+                }
                 routeDashPlayerStopAndRelease();
                 myDecoderHandlerThread.decoderHandler.sendMessage(myDecoderHandlerThread.decoderHandler.obtainMessage(DecoderHandlerThread.DESTROY));
 
@@ -2227,6 +2240,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public void onNothingSelected(AdapterView<?> parent) {
         Log.d(TAG, "user selected nothing!");
+    }
+
+    // VBox
+    public void sleep(final int timeout) {
+        try {
+            Thread.sleep(timeout);
+        } catch (Exception e) {}
     }
 
 }

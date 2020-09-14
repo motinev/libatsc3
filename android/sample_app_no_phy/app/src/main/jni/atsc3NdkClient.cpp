@@ -259,8 +259,9 @@ int atsc3NdkClient::PcapProducerThreadParserRun() {
 
             // VBox - to disable this service switch use:            if (current_port == 200) {
             if (current_port  != mCurrentIntServicePort) {
-                printf ("port was changes to: %d (IP %s)", mCurrentIntServicePort, mCurrentIntServiceIP);
                 current_port = mCurrentIntServicePort;
+                printf ("port was changes to: %d (IP %s)", mCurrentIntServicePort, mCurrentIntServiceIP);
+                LogMsgF("port was changes to: %d (IP %s)", mCurrentIntServicePort, mCurrentIntServiceIP);                current_port = mCurrentIntServicePort;
                 mcast_group.sin_port = htons(mCurrentIntServicePort);
                 mcast_group.sin_addr.s_addr = inet_addr(mCurrentIntServiceIP);
                 // Close current socket
